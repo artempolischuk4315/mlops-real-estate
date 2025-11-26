@@ -59,6 +59,15 @@ resource "aws_iam_role_policy_attachment" "monitoring_policy_attach" {
   policy_arn = aws_iam_policy.lambda_monitoring_policy.arn
 }
 
+resource "time_sleep" "wait_for_iam" {
+  depends_on = [
+    aws_iam_role_policy_attachment.monitoring_ecr_read,
+    aws_iam_role_policy_attachment.monitoring_policy_attach
+  ]
+
+  create_duration = "15s" # Чекаємо 15 секунд, щоб IAM права точно застосувались
+}
+
 resource "aws_lambda_function" "monitoring_evidently_lambda" {
   function_name = "MonitoringEvidentlyLambda-${var.project_name}"
   role          = aws_iam_role.lambda_monitoring_role.arn
@@ -78,8 +87,7 @@ resource "aws_lambda_function" "monitoring_evidently_lambda" {
   }
 
   depends_on = [
-    aws_iam_role_policy_attachment.monitoring_ecr_read,
-    aws_iam_role_policy_attachment.monitoring_policy_attach
+    time_sleep.wait_for_iam
   ]
 }
 

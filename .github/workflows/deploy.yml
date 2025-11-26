@@ -28,9 +28,11 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies (for SageMaker pipeline generation script)
+      - name: Install dependencies (Robust)
         run: |
-          pip install sagemaker boto3 pandas
+          python -m pip install --upgrade pip
+          pip install --upgrade --force-reinstall "sagemaker>=2.190.0,<3.0" boto3 pandas
+          python -c "import sagemaker; print(f'SageMaker Version: {sagemaker.__version__}')"
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -61,6 +63,7 @@ jobs:
 
       - name: Create ECR Repositories
         working-directory: ${{ env.TF_WORKING_DIR }}
+        continue-on-error: true
         run: |
           terraform apply -auto-approve \
             -target=aws_ecr_repository.monitoring_repo \
@@ -77,15 +80,12 @@ jobs:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           TAG: ${{ github.sha }}
         run: |
-          # A. Training Image
           docker build -t $REGISTRY/sagemaker-custom-training-${{ env.PROJECT_NAME }}:$TAG -f Dockerfile.training .
           docker push $REGISTRY/sagemaker-custom-training-${{ env.PROJECT_NAME }}:$TAG
 
-          # B. Monitoring Image
           docker build -t $REGISTRY/monitoring-evidently-${{ env.PROJECT_NAME }}:$TAG monitoring/
           docker push $REGISTRY/monitoring-evidently-${{ env.PROJECT_NAME }}:$TAG
 
-          # C. MLflow Image
           docker build -t $REGISTRY/mlflow-server-${{ env.PROJECT_NAME }}:$TAG mlflow_server/
           docker push $REGISTRY/mlflow-server-${{ env.PROJECT_NAME }}:$TAG
 
