@@ -47,21 +47,6 @@ resource "aws_ecr_repository" "training_repo" {
   force_delete = true
 }
 
-resource "null_resource" "build_push_training_image" {
-  triggers = {
-    dockerfile_hash = filesha1("${path.module}/../Dockerfile.training")
-  }
-
-  provisioner "local-exec" {
-    command = <<EOF
-      aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${var.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com
-      cd ${path.module}/..
-      docker build -f Dockerfile.training -t ${aws_ecr_repository.training_repo.repository_url}:latest .
-      docker push ${aws_ecr_repository.training_repo.repository_url}:latest
-    EOF
-  }
-}
-
 # ==========================================
 # 3. PIPELINE DEPLOY HELPER
 # ==========================================
@@ -118,7 +103,8 @@ data "external" "pipeline_definition" {
     aws_lambda_function.pipeline_deploy_helper.arn,
     var.project_name,
     "http://${aws_lb.mlflow_lb.dns_name}",
-    "${aws_ecr_repository.training_repo.repository_url}:latest",
+    # ЗМІНА ТУТ: Використовуємо var.image_tag замість latest
+    "${aws_ecr_repository.training_repo.repository_url}:${var.image_tag}",
     "s3://${aws_s3_bucket.target_bucket.id}/code/sourcedir.tar.gz"
   ]
   depends_on = [null_resource.install_sagemaker]

@@ -15,3 +15,9 @@ variable "project_name" {
   type        = string
   default     = "mlops-real-estate"
 }
+
+variable "image_tag" {
+  description = "Тег для Docker образів (Git SHA)"
+  type        = string
+  default     = "latest"
+}

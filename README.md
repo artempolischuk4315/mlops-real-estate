@@ -7,4 +7,4 @@
 6. On Monitoring {
   "force_today": true
 } -> target-bucket/monitoring/reports/data_drift_report
-7. 
+7. GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519_personal -o IdentitiesOnly=yes'

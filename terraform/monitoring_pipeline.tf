@@ -1,35 +1,7 @@
-locals {
-  monitoring_source_path = "${path.module}/../monitoring"
-  monitoring_image_hash  = sha1(join("", [for f in fileset(local.monitoring_source_path, "*") : filesha1("${local.monitoring_source_path}/${f}")]))
-}
-
 resource "aws_ecr_repository" "monitoring_repo" {
   name                 = "monitoring-evidently-${var.project_name}"
   image_tag_mutability = "MUTABLE"
   force_delete         = true
-}
-
-resource "null_resource" "build_push_monitoring_image" {
-  triggers = {
-    code_hash = local.monitoring_image_hash
-  }
-
-  provisioner "local-exec" {
-    command = <<EOF
-      # Логін
-      aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${var.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com
-
-      # Білд з УНІКАЛЬНИМ тегом (хешем)
-      docker build --platform linux/amd64 -t ${aws_ecr_repository.monitoring_repo.repository_url}:${local.monitoring_image_hash} ${local.monitoring_source_path}
-
-      # Також тегаємо як latest (для зручності, але лямбда юзатиме хеш)
-      docker tag ${aws_ecr_repository.monitoring_repo.repository_url}:${local.monitoring_image_hash} ${aws_ecr_repository.monitoring_repo.repository_url}:latest
-
-      # Пуш обох тегів
-      docker push ${aws_ecr_repository.monitoring_repo.repository_url}:${local.monitoring_image_hash}
-      docker push ${aws_ecr_repository.monitoring_repo.repository_url}:latest
-    EOF
-  }
 }
 
 resource "aws_iam_role" "lambda_monitoring_role" {
@@ -94,7 +66,7 @@ resource "aws_lambda_function" "monitoring_evidently_lambda" {
   timeout       = 300
   memory_size   = 2048
   package_type  = "Image"
-  image_uri     = "${aws_ecr_repository.monitoring_repo.repository_url}:${local.monitoring_image_hash}"
+  image_uri     = "${aws_ecr_repository.monitoring_repo.repository_url}:${var.image_tag}"
 
   environment {
     variables = {
@@ -106,7 +78,6 @@ resource "aws_lambda_function" "monitoring_evidently_lambda" {
   }
 
   depends_on = [
-    null_resource.build_push_monitoring_image,
     aws_iam_role_policy_attachment.monitoring_ecr_read,
     aws_iam_role_policy_attachment.monitoring_policy_attach
   ]

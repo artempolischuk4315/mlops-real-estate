@@ -37,27 +37,6 @@ resource "aws_iam_policy" "ecs_s3_policy" {
   })
 }
 
-resource "null_resource" "build_push_mlflow_image" {
-  triggers = {
-    docker_file = filesha1("${path.module}/../mlflow_server/Dockerfile")
-  }
-
-  provisioner "local-exec" {
-    command = <<EOF
-      # Логін в ECR
-      aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${var.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com
-
-      # Білд образу
-      docker build --platform linux/amd64 -t ${aws_ecr_repository.mlflow_ecr_repo.repository_url}:latest ${path.module}/../mlflow_server/
-
-      # Пуш в ECR
-      docker push ${aws_ecr_repository.mlflow_ecr_repo.repository_url}:latest
-    EOF
-  }
-
-  depends_on = [aws_ecr_repository.mlflow_ecr_repo]
-}
-
 resource "aws_iam_role_policy_attachment" "ecs_s3_attach" {
   role       = aws_iam_role.ecs_task_role.name
   policy_arn = aws_iam_policy.ecs_s3_policy.arn
@@ -212,7 +191,7 @@ resource "aws_ecs_task_definition" "mlflow_task" {
   container_definitions = jsonencode([
     {
       name      = "mlflow"
-      image     = "${aws_ecr_repository.mlflow_ecr_repo.repository_url}:latest"
+      image     = "${aws_ecr_repository.mlflow_ecr_repo.repository_url}:${var.image_tag}"
       portMappings = [
         {
           containerPort = 5000

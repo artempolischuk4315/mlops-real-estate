@@ -5,10 +5,15 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  backend "s3" {
+    bucket  = "tf-state-mlops-9217" # <--- УНІКАЛЬНА НАЗВА
+    key     = "mlops/terraform.tfstate"
+    region  = "eu-north-1"
+    encrypt = true
+  }
 }
 
 provider "aws" {
-  region = var.aws_region
-  
-  profile = "mlops-project-9217"
+  region  = var.aws_region
 }

@@ -1,0 +1,96 @@
+name: Deploy MLOps Infrastructure
+
+on:
+  push:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: eu-north-1
+  TF_WORKING_DIR: "./terraform"
+  TF_STATE_BUCKET: "tf-state-mlops-9217"
+  PROJECT_NAME: "mlops-real-estate"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Provision & Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies (for SageMaker pipeline generation script)
+        run: |
+          pip install sagemaker boto3 pandas
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Bootstrap Terraform State Bucket
+        run: |
+          if aws s3api head-bucket --bucket "$TF_STATE_BUCKET" 2>/dev/null; then
+            echo "Bucket $TF_STATE_BUCKET already exists."
+          else
+            echo "Creating bucket $TF_STATE_BUCKET..."
+            aws s3api create-bucket \
+              --bucket "$TF_STATE_BUCKET" \
+              --region "$AWS_REGION" \
+              --create-bucket-configuration LocationConstraint="$AWS_REGION"
+            aws s3api put-bucket-versioning --bucket "$TF_STATE_BUCKET" --versioning-configuration Status=Enabled
+          fi
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init
+
+      - name: Create ECR Repositories
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform apply -auto-approve \
+            -target=aws_ecr_repository.monitoring_repo \
+            -target=aws_ecr_repository.training_repo \
+            -target=aws_ecr_repository.mlflow_ecr_repo \
+            -var="image_tag=${{ github.sha }}"
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build & Push Docker Images
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          # A. Training Image
+          docker build -t $REGISTRY/sagemaker-custom-training-${{ env.PROJECT_NAME }}:$TAG -f Dockerfile.training .
+          docker push $REGISTRY/sagemaker-custom-training-${{ env.PROJECT_NAME }}:$TAG
+
+          # B. Monitoring Image
+          docker build -t $REGISTRY/monitoring-evidently-${{ env.PROJECT_NAME }}:$TAG monitoring/
+          docker push $REGISTRY/monitoring-evidently-${{ env.PROJECT_NAME }}:$TAG
+
+          # C. MLflow Image
+          docker build -t $REGISTRY/mlflow-server-${{ env.PROJECT_NAME }}:$TAG mlflow_server/
+          docker push $REGISTRY/mlflow-server-${{ env.PROJECT_NAME }}:$TAG
+
+      - name: Deploy Infrastructure
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform apply -auto-approve \
+            -var="image_tag=${{ github.sha }}"

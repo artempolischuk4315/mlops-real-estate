@@ -1,6 +1,7 @@
 
 resource "aws_s3_bucket" "source_bucket" {
   bucket = "source-bucket-${var.account_id}-${var.project_name}"
+  force_destroy = true
 
   tags = {
     Name    = "Source Data Bucket"
@@ -10,6 +11,7 @@ resource "aws_s3_bucket" "source_bucket" {
 
 resource "aws_s3_bucket" "target_bucket" {
   bucket = "target-bucket-${var.account_id}-${var.project_name}"
+  force_destroy = true 
 
   tags = {
     Name    = "ML Target Bucket - Artifacts and Data"
