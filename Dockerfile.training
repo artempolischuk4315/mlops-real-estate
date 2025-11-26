@@ -1,0 +1,36 @@
+# Dockerfile.training
+FROM python:3.10-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential gcc nginx libgomp1 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+    "scikit-learn==1.4.2" \
+    "pandas==2.2.2" \
+    "boto3" \
+    "mlflow==2.13.2" \
+    "sagemaker-training" \
+    "sagemaker-inference" \
+    "retrying" \
+    "gunicorn" \
+    "flask"
+
+ENV PYTHONUNBUFFERED=TRUE
+ENV PYTHONDONTWRITEBYTECODE=TRUE
+ENV PATH="/opt/ml/code:${PATH}"
+
+# Вказуємо SageMaker, що код лежить тут (щоб він не перезаписував його з S3)
+ENV SAGEMAKER_SUBMIT_DIRECTORY /opt/ml/code
+ENV SAGEMAKER_PROGRAM train.py
+
+WORKDIR /opt/ml/code
+
+COPY mlops_pipeline/scripts/ /opt/ml/code/
+
+COPY terraform/serve /opt/ml/code/serve
+COPY terraform/app.py /opt/ml/code/app.py
+
+RUN chmod +x /opt/ml/code/serve
+
+CMD ["/bin/bash"]

@@ -1,0 +1,28 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+.terraform.lock.hcl
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+
+# Data & Models (не заливаємо великі файли)
+*.csv
+*.tar.gz
+*.pkl
+data/
+model/
+
+# AWS/Env secrets
+.env
+credentials

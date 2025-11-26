@@ -1,0 +1,8 @@
+#!/bin/bash
+# Запускаємо Gunicorn, вказуючи на наш файл app.py (об'єкт app)
+/usr/local/bin/gunicorn --bind 0.0.0.0:8080 \
+    --timeout 60 \
+    --keep-alive 60 \
+    --workers 2 \
+    --log-level info \
+    app:app
