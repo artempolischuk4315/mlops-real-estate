@@ -20,6 +20,8 @@ REF_KEY = os.environ.get("REFERENCE_KEY", "monitoring/reference/reference_data.c
 PREDICTIONS_PREFIX = os.environ.get("MONITORING_PREFIX", "monitoring/predictions/")
 REPORT_PREFIX = os.environ.get("REPORT_PREFIX", "monitoring/reports/")
 
+ENDPOINT_NAME = os.environ.get("ENDPOINT_NAME", "real-estate-endpoint")
+
 FEATURE_COLUMNS = [
     "X1 transaction date",
     "X2 house age",
@@ -169,10 +171,12 @@ def lambda_handler(event, context):
     drift_score = 0.0
 
     try:
-        dataset_drift = json_result["metrics"][0]["result"]["dataset_drift"]
-        drift_score = json_result["metrics"][0]["result"]["share_of_drifted_features"]
+        metrics = json_result["metrics"][0]["result"]
+        dataset_drift = metrics["dataset_drift"]
+        drift_score = metrics["share_of_drifted_features"]
     except Exception as e:
         logger.error(f"Error parsing drift metrics: {e}")
+        # Не перериваємо роботу, але ставимо 0
         dataset_drift = False
         drift_score = 0.0
 
@@ -198,22 +202,22 @@ def lambda_handler(event, context):
             Namespace='MLOps/RealEstate',
             MetricData=[
                 {
-                    'MetricName': 'DataDriftShare',
+                    'MetricName': 'DriftScore',
                     'Dimensions': [
                         {
                             'Name': 'EndpointName',
-                            'Value': 'real-estate-endpoint'
+                            'Value': ENDPOINT_NAME
                         },
                     ],
                     'Value': drift_score,
-                    'Unit': 'Percent'
+                    'Unit': 'None'
                 },
                 {
                     'MetricName': 'DatasetDriftDetected',
                     'Dimensions': [
                         {
                             'Name': 'EndpointName',
-                            'Value': 'real-estate-endpoint'
+                            'Value': ENDPOINT_NAME
                         },
                     ],
                     'Value': 1 if dataset_drift else 0,
@@ -225,6 +229,7 @@ def lambda_handler(event, context):
 
     except Exception as e:
         logger.error(f"Failed to push metrics to CloudWatch: {e}")
+        raise e
 
     return {
         "statusCode": 200,

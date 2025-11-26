@@ -65,6 +65,13 @@ resource "aws_lambda_function" "pipeline_deploy_helper" {
   filename         = data.archive_file.deploy_lambda_zip.output_path
   source_code_hash = data.archive_file.deploy_lambda_zip.output_base64sha256
   timeout          = 60
+
+  environment {
+    variables = {
+      PROJECT_NAME             = var.project_name
+      MODEL_PACKAGE_GROUP_NAME = aws_sagemaker_model_package_group.model_group.model_package_group_name
+    }
+  }
 }
 
 # ==========================================
@@ -92,6 +99,26 @@ resource "null_resource" "install_sagemaker" {
   provisioner "local-exec" {
     command = "pip install --upgrade sagemaker"
   }
+}
+
+# Rule: Healthcheck every 2 minutes
+resource "aws_cloudwatch_event_rule" "health_check" {
+  name                = "EndpointHealthCheck"
+  schedule_expression = "rate(2 minutes)"
+}
+
+resource "aws_cloudwatch_event_target" "heal_endpoint" {
+  rule      = aws_cloudwatch_event_rule.health_check.name
+  target_id = "HealEndpoint"
+  arn       = aws_lambda_function.pipeline_deploy_helper.arn
+
+  input = jsonencode({
+     "endpoint_name": "real-estate-endpoint-${var.project_name}",
+     # Тут треба вказати ARN моделі. Оскільки це складно отримати динамічно в Cron,
+     # краще щоб Lambda сама шукала останню 'Approved' модель в Registry.
+     # Але для спрощення можна передати фіксовану назву, якщо вона є.
+     "role_arn": aws_iam_role.sagemaker_execution_role.arn
+  })
 }
 
 data "external" "pipeline_definition" {

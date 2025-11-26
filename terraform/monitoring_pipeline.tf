@@ -49,6 +49,11 @@ resource "aws_iam_policy" "lambda_monitoring_policy" {
           aws_s3_bucket.target_bucket.arn,
           "${aws_s3_bucket.target_bucket.arn}/*"
         ]
+      },
+      {
+        Effect = "Allow",
+        Action = ["cloudwatch:PutMetricData"],
+        Resource = "*"
       }
     ]
   })

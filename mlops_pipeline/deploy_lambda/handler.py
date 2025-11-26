@@ -1,11 +1,35 @@
 import boto3
 import time
 import logging
+import os
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 sm = boto3.client("sagemaker")
+
+
+def get_latest_approved_model_package(model_package_group_name):
+    try:
+        response = sm.list_model_packages(
+            ModelPackageGroupName=model_package_group_name,
+            ModelApprovalStatus='Approved',
+            SortBy='CreationTime',
+            SortOrder='Descending',
+            MaxResults=1
+        )
+        packages = response.get("ModelPackageSummaryList", [])
+        if not packages:
+            logger.error(f"No approved models found in group: {model_package_group_name}")
+            return None
+
+        latest_arn = packages[0]["ModelPackageArn"]
+        logger.info(f"Found latest approved model: {latest_arn}")
+        return latest_arn
+
+    except Exception as e:
+        logger.error(f"Failed to list model packages: {e}")
+        return None
 
 
 def lambda_handler(event, context):
@@ -15,22 +39,29 @@ def lambda_handler(event, context):
     endpoint_name = event.get("endpoint_name")
     role_arn = event.get("role_arn")
 
-    if not model_package_arn or not endpoint_name:
-        raise ValueError("Missing parameters")
+    project_name = os.environ.get("PROJECT_NAME", "mlops-real-estate")
+    model_group_name = os.environ.get("MODEL_PACKAGE_GROUP_NAME", f"RealEstateModelGroup-{project_name}")
+
+    if not model_package_arn:
+        logger.info("model_package_arn not provided. Searching Registry...")
+        model_package_arn = get_latest_approved_model_package(model_group_name)
+
+        if not model_package_arn:
+            raise ValueError("Could not find any Approved model in Registry to deploy.")
+
+    if not endpoint_name or not role_arn:
+        raise ValueError(f"Missing required parameters. Endpoint: {endpoint_name}, Role: {role_arn}")
+    # ---------------------------
 
     timestamp = int(time.time())
-    model_name = f"pipeline-model-{timestamp}"
-    config_name = f"pipeline-config-{timestamp}"
+    model_name = f"model-{timestamp}"
+    config_name = f"config-{timestamp}"
 
-    # 1. Create Model object
+    # 1. Create Model
     logger.info(f"Creating Model: {model_name}")
     sm.create_model(
         ModelName=model_name,
-        PrimaryContainer={"ModelPackageName": model_package_arn,
-                          "Environment": {
-                              "SAGEMAKER_PROGRAM": "inference.py"
-                          }
-                        },
+        PrimaryContainer={"ModelPackageName": model_package_arn},
         ExecutionRoleArn=role_arn
     )
 
@@ -46,45 +77,45 @@ def lambda_handler(event, context):
         }]
     )
 
-    # 3. Check Endpoint Status
+    # 3. Update or Create Endpoint
     try:
-        response = sm.describe_endpoint(EndpointName=endpoint_name)
-        status = response["EndpointStatus"]
-        logger.info(f"Endpoint '{endpoint_name}' exists. Status: {status}")
+        endpoint = sm.describe_endpoint(EndpointName=endpoint_name)
+        status = endpoint["EndpointStatus"]
+        logger.info(f"Endpoint status: {status}")
 
         if status == "InService":
-            logger.info("Updating endpoint...")
+            # AutoRollbackConfiguration
+            alarm_name = f"HighErrorRate-{project_name}"
+
             sm.update_endpoint(
                 EndpointName=endpoint_name,
-                EndpointConfigName=config_name
+                EndpointConfigName=config_name,
+                DeploymentConfig={
+                    "BlueGreenUpdatePolicy": {
+                        "TrafficRoutingConfiguration": {
+                            "Type": "ALL_AT_ONCE",
+                            "WaitIntervalInSeconds": 300  # 5 mins
+                        },
+                        "TerminationWaitInSeconds": 60,
+                        "MaximumExecutionTimeoutInSeconds": 1800
+                    },
+                    "AutoRollbackConfiguration": {
+                        "Alarms": [{"AlarmName": alarm_name}]
+                    }
+                }
             )
-            return {"status": "updating", "endpoint": endpoint_name}
+            return {"status": "updating", "model": model_package_arn}
 
         elif status in ["Failed", "OutOfService"]:
-            logger.warning(f"Endpoint is in {status} state. Deleting and recreating...")
+            logger.warning("Endpoint is broken. Recreating...")
             sm.delete_endpoint(EndpointName=endpoint_name)
             time.sleep(20)
-            sm.create_endpoint(
-                EndpointName=endpoint_name,
-                EndpointConfigName=config_name
-            )
-            return {"status": "recreating", "endpoint": endpoint_name}
+            sm.create_endpoint(EndpointName=endpoint_name, EndpointConfigName=config_name)
+            return {"status": "recreating"}
 
-        elif status in ["Creating", "Updating", "SystemUpdating"]:
-            logger.warning("Endpoint is busy. Cannot update now.")
-            raise Exception(f"Endpoint is busy ({status}). Please try again later.")
+    except sm.exceptions.ClientError:
+        logger.info("Endpoint not found. Creating new...")
+        sm.create_endpoint(EndpointName=endpoint_name, EndpointConfigName=config_name)
+        return {"status": "creating"}
 
-    except sm.exceptions.ClientError as e:
-        error_code = e.response['Error']['Code']
-        if error_code == 'ValidationException' and "Could not find endpoint" in e.response['Error']['Message']:
-            logger.info(f"Endpoint not found. Creating new: {endpoint_name}")
-            sm.create_endpoint(
-                EndpointName=endpoint_name,
-                EndpointConfigName=config_name
-            )
-            return {"status": "creating", "endpoint": endpoint_name}
-        else:
-            logger.error(f"Unexpected error: {e}")
-            raise e
-
-    return {"status": "done"}
+    return {"status": "unknown"}

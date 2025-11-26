@@ -94,3 +94,12 @@ jobs:
         run: |
           terraform apply -auto-approve \
             -var="image_tag=${{ github.sha }}"
+
+      - name: Run Load Test
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          LAMBDA_NAME=$(terraform output -raw api_lambda_arn | awk -F':' '{print $NF}')
+
+          echo "Running load test against: $LAMBDA_NAME"
+
+          python ../tests/load_test.py --function-name $LAMBDA_NAME
