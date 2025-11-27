@@ -6,12 +6,7 @@ terraform {
     }
   }
 
-  backend "s3" {
-    bucket  = "tf-state-mlops-9217" # <--- УНІКАЛЬНА НАЗВА
-    key     = "mlops/terraform.tfstate"
-    region  = "eu-north-1"
-    encrypt = true
-  }
+  backend "s3" {}
 }
 
 provider "aws" {

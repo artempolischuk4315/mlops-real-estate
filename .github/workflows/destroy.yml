@@ -6,6 +6,8 @@ on:
 env:
   AWS_REGION: eu-north-1
   TF_WORKING_DIR: "./terraform"
+  TF_STATE_BUCKET: "tf-state-mlops-9217"
+  PROJECT_NAME: "mlops-real-estate"
 
 permissions:
   id-token: write
@@ -42,7 +44,11 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
+            -backend-config="key=mlops/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}"
 
       - name: Terraform Destroy
         working-directory: ${{ env.TF_WORKING_DIR }}
