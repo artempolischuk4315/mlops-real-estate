@@ -95,12 +95,6 @@ resource "aws_s3_object" "sagemaker_code_upload" {
   etag   = data.archive_file.sagemaker_source_code.output_md5
 }
 
-resource "null_resource" "install_sagemaker" {
-  provisioner "local-exec" {
-    command = "pip install --upgrade sagemaker"
-  }
-}
-
 # Rule: Healthcheck every 2 minutes
 resource "aws_cloudwatch_event_rule" "health_check" {
   name                = "EndpointHealthCheck"
@@ -130,11 +124,9 @@ data "external" "pipeline_definition" {
     aws_lambda_function.pipeline_deploy_helper.arn,
     var.project_name,
     "http://${aws_lb.mlflow_lb.dns_name}",
-    # ЗМІНА ТУТ: Використовуємо var.image_tag замість latest
     "${aws_ecr_repository.training_repo.repository_url}:${var.image_tag}",
     "s3://${aws_s3_bucket.target_bucket.id}/code/sourcedir.tar.gz"
   ]
-  depends_on = [null_resource.install_sagemaker]
 }
 
 resource "aws_sagemaker_pipeline" "mlops_pipeline" {
