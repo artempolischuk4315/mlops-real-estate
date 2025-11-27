@@ -43,3 +43,10 @@ jobs:
             response.json
           
           cat response.json
+          
+          if grep -q "errorMessage" response.json; then
+            echo "❌ Critical Error: Lambda failed execution!"
+            exit 1
+          fi
+          
+          echo "✅ Rollback executed successfully"
