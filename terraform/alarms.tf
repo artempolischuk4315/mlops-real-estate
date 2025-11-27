@@ -24,7 +24,7 @@ resource "aws_cloudwatch_metric_alarm" "high_error_rate" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    FunctionName = aws_lambda_function.api_wrapper_lambda.function_name
+    FunctionName = aws_lambda_function.inference_lambda.function_name
   }
 }
 
