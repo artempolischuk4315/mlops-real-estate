@@ -145,7 +145,4 @@ def lambda_handler(event, context):
 
     except Exception as e:
         logger.error(f"Error invoking endpoint: {str(e)}")
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
-        }
+        raise e

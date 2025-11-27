@@ -21,6 +21,7 @@ resource "aws_cloudwatch_metric_alarm" "high_error_rate" {
   statistic           = "Sum"
   threshold           = "1"
   alarm_description   = "Triggers if Inference Lambda fails even once"
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     FunctionName = aws_lambda_function.api_wrapper_lambda.function_name
