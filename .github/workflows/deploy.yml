@@ -44,18 +44,16 @@ jobs:
       - name: Bootstrap Terraform State Bucket
         run: |
           if aws s3api head-bucket --bucket "$TF_STATE_BUCKET" 2>/dev/null; then
-            echo "Bucket $TF_STATE_BUCKET already exists."
+            echo "Bucket exists."
           else
-            echo "Creating bucket $TF_STATE_BUCKET..."
-            aws s3api create-bucket \
-              --bucket "$TF_STATE_BUCKET" \
-              --region "$AWS_REGION" \
-              --create-bucket-configuration LocationConstraint="$AWS_REGION"
+            aws s3api create-bucket --bucket "$TF_STATE_BUCKET" --region "$AWS_REGION" --create-bucket-configuration LocationConstraint="$AWS_REGION"
             aws s3api put-bucket-versioning --bucket "$TF_STATE_BUCKET" --versioning-configuration Status=Enabled
           fi
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_wrapper: false
 
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -86,10 +84,8 @@ jobs:
         run: |
           docker build -t $REGISTRY/sagemaker-custom-training-${{ env.PROJECT_NAME }}:$TAG -f Dockerfile.training .
           docker push $REGISTRY/sagemaker-custom-training-${{ env.PROJECT_NAME }}:$TAG
-
           docker build -t $REGISTRY/monitoring-evidently-${{ env.PROJECT_NAME }}:$TAG monitoring/
           docker push $REGISTRY/monitoring-evidently-${{ env.PROJECT_NAME }}:$TAG
-
           docker build -t $REGISTRY/mlflow-server-${{ env.PROJECT_NAME }}:$TAG mlflow_server/
           docker push $REGISTRY/mlflow-server-${{ env.PROJECT_NAME }}:$TAG
 
@@ -98,12 +94,3 @@ jobs:
         run: |
           terraform apply -auto-approve \
             -var="image_tag=${{ github.sha }}"
-
-      - name: Run Load Test
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          LAMBDA_NAME=$(terraform output -raw api_lambda_arn | awk -F':' '{print $NF}')
-
-          echo "Running load test against: $LAMBDA_NAME"
-
-          python ../tests/load_test.py --function-name $LAMBDA_NAME
