@@ -38,6 +38,29 @@ resource "aws_iam_role_policy_attachment" "deployment_logs_access" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+resource "aws_iam_policy" "lambda_registry_access" {
+  name = "LambdaModelRegistryAccess-${var.project_name}"
+  description = "Allows Lambda to list and describe models in Registry"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Action = [
+        "sagemaker:ListModelPackages",
+        "sagemaker:DescribeModelPackage",
+        "sagemaker:ListModelPackageGroups"
+      ],
+      Resource = "*"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "registry_access_attach" {
+  role       = aws_iam_role.lambda_deployment_role.name
+  policy_arn = aws_iam_policy.lambda_registry_access.arn
+}
+# ---------------------------------------------
+
 # ==========================================
 # 2. ECR & DOCKER BUILD
 # ==========================================
@@ -61,7 +84,7 @@ resource "aws_lambda_function" "pipeline_deploy_helper" {
   function_name    = "PipelineDeployHelper-${var.project_name}"
   handler          = "handler.lambda_handler"
   runtime          = "python3.11"
-  role             = aws_iam_role.lambda_deployment_role.arn # Тепер ця роль оголошена вище!
+  role             = aws_iam_role.lambda_deployment_role.arn
   filename         = data.archive_file.deploy_lambda_zip.output_path
   source_code_hash = data.archive_file.deploy_lambda_zip.output_base64sha256
   timeout          = 60
@@ -95,10 +118,10 @@ resource "aws_s3_object" "sagemaker_code_upload" {
   etag   = data.archive_file.sagemaker_source_code.output_md5
 }
 
-# Rule: Healthcheck every 2 minutes
+# --- EventBridge Health Check ---
 resource "aws_cloudwatch_event_rule" "health_check" {
   name                = "EndpointHealthCheck"
-  schedule_expression = "rate(2 minutes)"
+  schedule_expression = "rate(1 minute)"
 }
 
 resource "aws_cloudwatch_event_target" "heal_endpoint" {
@@ -108,12 +131,19 @@ resource "aws_cloudwatch_event_target" "heal_endpoint" {
 
   input = jsonencode({
      "endpoint_name": "real-estate-endpoint-${var.project_name}",
-     # Тут треба вказати ARN моделі. Оскільки це складно отримати динамічно в Cron,
-     # краще щоб Lambda сама шукала останню 'Approved' модель в Registry.
-     # Але для спрощення можна передати фіксовану назву, якщо вона є.
      "role_arn": aws_iam_role.sagemaker_execution_role.arn
   })
 }
+
+# --- Permission for EventBridge to Call Lambda ---
+resource "aws_lambda_permission" "allow_health_check_trigger" {
+  statement_id  = "AllowHealthCheckInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.pipeline_deploy_helper.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.health_check.arn
+}
+# -----------------------------------------------------
 
 data "external" "pipeline_definition" {
   program = [
@@ -218,4 +248,33 @@ resource "aws_s3_bucket_notification" "pipeline_trigger_notification" {
     filter_suffix       = ".csv"
   }
   depends_on = [aws_lambda_permission.allow_s3_pipeline_trigger]
+}
+
+# --- Weekly Retrain Schedule ---
+resource "aws_cloudwatch_event_rule" "weekly_retrain" {
+  name                = "WeeklyRetrainTrigger-${var.project_name}"
+  schedule_expression = "cron(0 0 ? * MON *)"
+}
+
+resource "aws_cloudwatch_event_target" "trigger_pipeline_weekly" {
+  rule      = aws_cloudwatch_event_rule.weekly_retrain.name
+  target_id = "TriggerPipelineWeekly"
+  arn       = aws_lambda_function.pipeline_trigger.arn
+
+  input = jsonencode({
+    "Records": [{
+      "s3": {
+        "bucket": { "name": aws_s3_bucket.source_bucket.id },
+        "object": { "key": "seed/real_estate.csv" }
+      }
+    }]
+  })
+}
+
+resource "aws_lambda_permission" "allow_weekly_trigger" {
+  statement_id  = "AllowWeeklyEventBridge"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.pipeline_trigger.arn
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.weekly_retrain.arn
 }
