@@ -1,0 +1,47 @@
+name: Trigger ML Pipeline
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: eu-north-1
+  PROJECT_NAME: "mlops-real-estate"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  trigger:
+    name: Upload Data to S3
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Trigger Pipeline via S3 Upload
+        env:
+          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: |
+          # 1. Формуємо назву бакета
+          # Якщо у вас немає секрету AWS_ACCOUNT_ID, замініть ${ACCOUNT_ID} на 921775433712
+          BUCKET_NAME="source-bucket-${ACCOUNT_ID}-${{ env.PROJECT_NAME }}"
+          
+          echo "📂 Target Bucket: $BUCKET_NAME"
+          
+          if [ ! -f "data/real_estate.csv" ]; then
+            echo "❌ Error: data/real_estate.csv not found in the repository!"
+            exit 1
+          fi
+
+          echo "🚀 Uploading data to trigger SageMaker Pipeline..."
+          aws s3 cp data/real_estate.csv s3://$BUCKET_NAME/seed/real_estate.csv
+
+          echo "✅ Upload complete. The pipeline should start momentarily."

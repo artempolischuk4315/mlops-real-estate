@@ -1,0 +1,45 @@
+name: PANIC - Manual Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "ROLLBACK" to confirm'
+        required: true
+        default: ''
+
+env:
+  AWS_REGION: eu-north-1
+  ROLLBACK_LAMBDA_NAME: "ManualRollbackLambda-mlops-real-estate"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  rollback:
+    name: Execute Rollback
+    runs-on: ubuntu-latest
+    steps:
+      - name: Safety Check
+        if: ${{ github.event.inputs.confirm != 'ROLLBACK' }}
+        run: |
+          echo "❌ Rollback aborted. You must type 'ROLLBACK' to confirm."
+          exit 1
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Trigger Rollback Lambda
+        run: |
+          echo "⚠️ Triggering Rollback..."
+          aws lambda invoke \
+            --function-name ${{ env.ROLLBACK_LAMBDA_NAME }} \
+            --payload '{}' \
+            response.json
+          
+          cat response.json
