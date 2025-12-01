@@ -70,7 +70,7 @@ resource "time_sleep" "wait_for_iam" {
     aws_iam_role_policy_attachment.monitoring_policy_attach
   ]
 
-  create_duration = "15s" # Чекаємо 15 секунд, щоб IAM права точно застосувались
+  create_duration = "30s"
 }
 
 resource "aws_lambda_function" "monitoring_evidently_lambda" {
@@ -88,6 +88,7 @@ resource "aws_lambda_function" "monitoring_evidently_lambda" {
       REFERENCE_KEY     = "monitoring/reference/reference_data.csv"
       MONITORING_PREFIX = "monitoring/predictions/"
       REPORT_PREFIX     = "monitoring/reports/"
+      ENDPOINT_NAME     = "real-estate-endpoint-${var.project_name}"
     }
   }
 
